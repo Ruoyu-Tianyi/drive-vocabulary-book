@@ -38,6 +38,7 @@ export default function Settings() {
   }
   return <div className="settings-page">
     <h2>同步与备份</h2>
+    {message && <p className="settings-message" role="status">{message}</p>}
     <section className="settings-card">
       <h3>DeepSeek API 词汇补全</h3>
       <p>应用在本机运行，DeepSeek 负责生成音标、中文释义和例句，无需安装 Ollama 或下载模型。</p>
@@ -112,6 +113,5 @@ export default function Settings() {
             setMessage(result.message); window.dispatchEvent(new Event('library-changed')); window.dispatchEvent(new Event('cloud-data-changed'))
           }); event.target.value = '' }} /></label>
     </section>
-    {message && <p className="settings-message" role="status">{message}</p>}
   </div>
 }
