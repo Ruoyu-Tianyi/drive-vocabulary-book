@@ -8,3 +8,10 @@ words.json
 words.json.bak
 words.json.bak.*
 config.json
+.secrets/
+*.lock
+*.log
+words.json.*
+.pytest_cache/
+frontend/pnpm-lock.yaml
+.venv-*/

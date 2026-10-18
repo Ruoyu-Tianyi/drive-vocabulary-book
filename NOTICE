@@ -1,0 +1,15 @@
+Drive Vocabulary Book / 云端词汇本
+
+This project is a derivative of Vocabulary Notebook by Eric Zhou:
+https://github.com/Eric-Zhou-0302/vocabulary-notebook
+Upstream base: 173b2887265439a9fd578a351babf0be61181cfa
+Original license: MIT, as stated in the upstream README.
+
+The upstream FastAPI application, React interface, AI vocabulary prompt,
+FSRS implementation, exports, and regression tests form the foundation.
+The original Git history is retained. See docs/UPSTREAM_README.md.
+
+Ruoyu-Tianyi's extensions add Google Drive synchronization, multiple notebooks,
+immutable learning histories, conflict-safe merging, local-only AI configuration,
+Windows startup, and sync/backup settings. This is an independently maintained
+derivative; no affiliation with or endorsement by the upstream author is implied.

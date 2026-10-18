@@ -1,14 +1,14 @@
 {
   "provider": "ollama",
   "ollama": {
-    "url": "http://localhost:11434/api/generate",
-    "model": "gemma4:26b"
-  },
-  "deepseek": {
-    "api_key": "",
-    "model": ""
+    "url": "http://127.0.0.1:11434/api/generate",
+    "model": "qwen3:8b"
   },
   "srs": {
     "daily_new_limit": 20
+  },
+  "sync": {
+    "interval_seconds": 30,
+    "credentials_dir": ".secrets"
   }
 }

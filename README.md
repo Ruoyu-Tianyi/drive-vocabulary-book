@@ -1,275 +1,133 @@
-<div align="center">
-  <h1>📖 Vocabulary Notebook</h1>
-  <p><strong>把单词记下来，也真正记住它。</strong></p>
-  <p>
-    一个本地优先的 AI 词汇笔记本。写下单词，自动补全音标、释义与例句，
-    <br />
-    再用 FSRS 间隔复习，把“见过”变成“记得”。
-  </p>
-  <p>
-    <a href="https://github.com/Eric-Zhou-0302/vocabulary-notebook">
-      <img alt="Local-first" src="https://img.shields.io/badge/Local--first-Your_Data-9b7137?style=for-the-badge&labelColor=292522" />
-    </a>
-    <a href="https://fastapi.tiangolo.com/">
-      <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&labelColor=292522" />
-    </a>
-    <a href="https://react.dev/">
-      <img alt="React" src="https://img.shields.io/badge/React-Frontend-61dafb?style=for-the-badge&labelColor=292522" />
-    </a>
-    <a href="https://opensource.org/licenses/MIT">
-      <img alt="License" src="https://img.shields.io/badge/License-MIT-8b5cf6?style=for-the-badge&labelColor=292522" />
-    </a>
-  </p>
-</div>
+# 云端词汇本 · Drive Vocabulary Book
 
-<p align="center">
-  <img
-    src="assets/vocabulary-notebook-cover.jpg"
-    alt="Vocabulary Notebook — 本地优先的 AI 词汇笔记本"
-    width="960"
-  />
-</p>
+**本地运行 AI，Google Drive 保存并同步词汇与学习记录。** 面向两台私人电脑使用，支持为法律、金融等课程创建独立单词本。
 
----
+基于 **[Eric Zhou 的 Vocabulary Notebook](https://github.com/Eric-Zhou-0302/vocabulary-notebook)** 开发，保留原项目提交历史与 MIT 版权声明。原项目提供 FastAPI、React、AI 补全、FSRS 复习及导出；本项目扩展云同步、多单词本、逐次复习记录与冲突合并。[来源说明](NOTICE) · [原 README](docs/UPSTREAM_README.md) · [MIT License](LICENSE)
 
-## 它做什么
+## 功能
 
-很多单词软件让你记住一个账号，却不一定让你记住单词。
+- 创建、重命名单词本与填写课程说明；相同拼写可在法律、金融本中保留不同释义。
+- 按当前单词本搜索、筛选日期、复习与导出，也可跨本浏览。
+- 本机 Ollama 参考课程领域补全音标、中文释义和例句；手动内容不会被 AI 覆盖。
+- FSRS 间隔复习，保留每次评分、复习次数、遗忘次数与到期时间。
+- 两种 Google Drive 同步方式，离线修改后自动合并。
+- 完整 JSON 备份恢复，兼容原项目的 `words.json`。
+- 保留原项目的主题、快捷键、闪卡与 PDF/CSV/JSON 导出。
 
-Vocabulary Notebook 把词库留在本地：添加一个单词后，Ollama 或 DeepSeek 会在后台补全 IPA 音标、中文释义和例句；学完之后，FSRS 根据你的真实记忆状态安排下一次复习。
+## Windows 快速启动
 
-| 能力 | 体验 |
-|---|---|
-| **AI 自动补全** | 只输入单词，后台生成音标、中文释义和自然例句 |
-| **实时进度** | SSE 推送补全过程，不用轮询，也不用手动刷新 |
-| **每日复习** | FSRS-4.5 调度，按“重来 / 困难 / 良好 / 简单”调整间隔 |
-| **全部单词** | 按 A–Z 或随机顺序翻卡，不改动复习进度 |
-| **主动回忆** | 闪卡和拼写测试并存，不只做选择题式识别 |
-| **随时带走** | 一键导出 PDF、CSV 或 JSON，数据不被平台锁住 |
-| **舒服耐看** | 深色 / 浅色主题，简体 / 繁体切换，完整键盘操作 |
+安装 [Python 3.10+](https://www.python.org/downloads/)，然后：
 
----
-
-## 快速开始
-
-### 1. 获取项目
-
-```bash
-git clone https://github.com/Eric-Zhou-0302/vocabulary-notebook.git
-cd vocabulary-notebook
+```powershell
+git clone https://github.com/Ruoyu-Tianyi/drive-vocabulary-book.git
+cd drive-vocabulary-book
+.\start.bat
 ```
 
-### 2. 安装后端依赖
+首次运行自动创建虚拟环境并安装依赖。前端构建产物已包含在仓库中，日常使用不需要 Node.js。浏览器访问 **http://127.0.0.1:1400**。
 
-使用项目独立虚拟环境，避免污染系统 Python：
+已安装依赖可直接运行 `.venv\Scripts\python.exe app.py`。升级后安装新依赖：`powershell -ExecutionPolicy Bypass -File .\start.ps1 -Install`。
+
+macOS / Linux：
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp config.json.example config.json
-```
-
-### 3. 构建前端
-
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-### 4. 启动
-
-```bash
 python app.py
 ```
 
-打开 [http://localhost:1400](http://localhost:1400)，你的词库就在那里。
+## 本地 AI
 
-> 正在开发？运行 `./start.sh`，它会同时启动 FastAPI 热重载服务和 Vite 开发服务器。前端地址为 [http://localhost:5173](http://localhost:5173)。
+安装并启动 [Ollama](https://ollama.com/)，下载适合本机的模型，例如：
 
----
+```bash
+ollama pull qwen3:8b
+ollama serve
+```
 
-## 使用
+Ollama 桌面程序已运行时无需再执行 `ollama serve`。默认模型为 `qwen3:8b`，可复制 `config.json.example` 为 `config.json` 修改模型名称。未启动 AI 时仍可保存、手动编辑、同步和复习；之后点击“补全缺失”即可补全。
 
-### 写下一个单词
+此版本限定 AI 使用本机 HTTP 地址，移除了云端 DeepSeek 调用。模型、配置和令牌不上传到词库。
 
-点击“添加单词”，输入拼写即可。应用会立即保存记录，并把 AI 补全任务放到后台；音标、释义和例句生成后会实时出现在页面上。
+## 同步方式一：Drive 桌面同步文件夹（推荐）
 
-### 每天复习
+无需 Google Cloud 项目和 OAuth 客户端。
 
-进入“复习”页，先回忆，再翻面：
+1. 两台电脑安装[桌面版 Google Drive](https://support.google.com/drive/answer/10838124?hl=zh-Hans)，登录同一个私人账号。
+2. 在“我的云端硬盘”新建专用文件夹，例如 `Drive Vocabulary Book`，将它设为“可离线使用”。
+3. 进入“同步与备份”，填写本机绝对路径，例如 `G:\我的云端硬盘\Drive Vocabulary Book`，点击“连接同步文件夹”。第二台电脑选择**同一个云端文件夹**，本机盘符可以不同。
+4. 各自在本机运行程序。应用默认每 30 秒读取并合并变更。
 
-| 按键 | 操作 |
-|---|---|
-| `Space` / `Enter` | 翻开当前卡片 |
-| `1` | 重来 |
-| `2` | 困难 |
-| `3` | 良好 |
-| `4` | 简单 |
-| `←` / `→` | 在“全部单词”模式切换卡片 |
+**“待写入文件夹为 0”表示变更已交给 Drive 桌面版；实际上传/下载由桌面版完成。关闭电脑前还应确认 Drive 的同步状态为已完成。** 另一台电脑收到文件后，应用下一轮自动合并。
 
-每次评分都会更新该词的难度、稳定性和下次复习时间。选择“重来”的卡片会回到本轮队尾，不会偷偷溜走。
+两台电脑的程序目录、模型、`.venv`、`.secrets` 和 `words.json` 分别留在本机。云端目录只保存 `library.json` 身份标识及不可变的 `vocabulary-*.json` 变更文件。不要将整个项目或 `.secrets` 放入同步目录，不要手动编辑/删除变更文件。
 
-### 回看整本词库
+ChatGPT 的 Drive 插件可帮助聊天读写文件，这个独立应用不依赖 ChatGPT 持续运行，也不读取或导出聊天插件的授权令牌。[OpenAI 插件授权说明](https://developers.openai.com/plugins/build/auth)
 
-切换到“全部单词”，可以按 A–Z 浏览，也可以洗牌随机复习。这个模式只读，不提交评分、不消耗每日新词额度，也不会改变 SRS 状态。
+## 同步方式二：Drive API 直连（可选）
 
-### 导出
+适合不安装 Drive 桌面版的电脑。与文件夹方式二选一，在设置中断开后可切换。
 
-当前筛选结果可以导出为：
+1. 在 [Google Cloud](https://console.cloud.google.com/apis/library/drive.googleapis.com) 创建项目并启用 Google Drive API。
+2. 配置 OAuth 同意屏幕，个人测试时把自己的账号加入测试用户。
+3. 创建 **桌面应用** OAuth 客户端，下载 JSON。
+4. 在设置中导入 JSON，点击“连接 Google Drive”→“继续 Google 授权”。
+5. 两台电脑使用**同一客户端 JSON、同一 Google 账号**各自授权，不要复制 `token.json`。
 
-- **PDF**：适合打印和离线阅读，内置 CJK 字体支持
-- **CSV**：适合 Excel、Numbers 或进一步分析
-- **JSON**：完整备份，方便迁移与二次开发
+只申请 `drive.appdata` 权限，数据存于应用专属的隐藏 `appDataFolder`，不出现在普通 Drive 文件列表，也不访问其他文件。[Google 文档](https://developers.google.com/workspace/drive/api/guides/appdata)
 
----
+授权采用本机回调、随机 state 和 PKCE。令牌仅保存在 `.secrets/token.json`。Google 测试应用的授权可能按 Google 发布状态/策略失效；应用会保留离线修改并提示重新授权。账户空间、API 配额和网络仍适用。
 
-## 选择你的 AI
+## 两台电脑如何合并
 
-编辑根目录下的 `config.json`。词库始终保存在本地；只有选择云端 Provider 时，待补全的单词内容才会发送给对应服务。
+```text
+电脑 A：本地界面 → 原子保存缓存 → 追加变更文件
+                                   ↕ Google Drive
+电脑 B：本地界面 ← 合并并重算 FSRS ← 读取变更文件
+```
 
-### Ollama：本地运行
+- 不用整份词库覆盖云端。每个变更有独立 ID，重试、重启和重复传输不会重复评分。
+- 不同字段的编辑同时保留。同一字段同时编辑，按 Lamport 时钟、设备 ID、操作 ID 的固定顺序选择一致结果，不以电脑墙上时间决定先后。
+- 每次复习是独立事件，按时间与事件 ID 排序重算 FSRS，两台电脑的评分均保留。请保持系统时钟正确。
+- 删除优先于旧设备的编辑和评分，避免单词复活。重新添加会生成新 ID。
+- 同步为最终一致，两个设备同时写入后，下一轮读取收敛；尚未上传的修改不会出现在另一台电脑。
+- 两台电脑离线分别新建同一拼写时，保留两条独立记录，避免误合并课程含义与学习记录。同步后可检查并删除重复项。
+- 当前不自动压缩历史或清理删除标记，以支持长期离线设备。适合私人词库，变更文件会随使用增长。
+
+## 备份、迁移与恢复
+
+“同步与备份”里的**完整备份**包含全部单词本、字段变更、删除标记和每次复习事件。导入时合并，不覆盖现有数据，也保留删除标记。
+
+从原项目迁移：导入原 `words.json`，或首次启动前复制到本项目根目录。旧 FSRS 状态作为基线保留；旧版本未记录的逐次评分无法补造。自动迁移前保留 `words.json.legacy.bak`。原格式导入时，已有 ID 跳过。
+
+单词列表的 JSON/CSV/PDF 导出只含当前筛选结果，需要全部历史时请用设置中的完整备份。本地每 10 分钟另存 `words.json.bak`。损坏文件会保留并停止读取，不会用空词库覆盖云端。
+
+## 配置与安全
 
 ```json
 {
   "provider": "ollama",
-  "ollama": {
-    "url": "http://localhost:11434/api/generate",
-    "model": "gemma4:26b"
-  }
+  "ollama": {"url": "http://127.0.0.1:11434/api/generate", "model": "qwen3:8b"},
+  "srs": {"daily_new_limit": 20},
+  "sync": {"interval_seconds": 30, "credentials_dir": ".secrets"}
 }
 ```
 
-启动模型后即可使用：
+只监听 `127.0.0.1:1400`，限制 Host 与修改请求来源；不用于公开部署。一个本地缓存只允许一个进程打开。真实配置、词库、备份和令牌被 Git 忽略。同步文件为 JSON，文件夹模式沿用文件夹的现有共享权限，请使用私人文件夹。
 
-```bash
-ollama serve
-ollama run gemma4:26b
-```
-
-模型名称可以替换；修改后同步更新 `config.json` 中的 `model`。
-
-### DeepSeek：云端调用
-
-```json
-{
-  "provider": "deepseek",
-  "deepseek": {
-    "api_key": "sk-你的-key",
-    "model": "deepseek-chat"
-  }
-}
-```
-
-API Key 可在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys)创建。不要提交真实的 `config.json`。
-
----
-
-## 复习机制
-
-每日复习使用 FSRS-4.5，根据每个单词的难度（Difficulty）与记忆稳定性（Stability）估算遗忘概率，并动态安排下一次出现的时间。
-
-```text
-添加单词
-   │
-   ├── AI 补全音标、释义、例句
-   │
-   ▼
-首次复习 ──评分──> 更新记忆状态 ──> 计算下次到期时间
-   ▲                                      │
-   └──────────────── 到期后重新进入队列 ──┘
-```
-
-- 默认每天引入 20 个新词
-- 评分按钮会预览预计的下次间隔
-- 新词额度由首次复习时间推导，重启服务不会清零
-- 旧词无需迁移，第一次评分时才写入 `srs` 字段
-- 顶部“复习”角标会显示当前待复习数量
-
-调整每日新词上限：
-
-```json
-{
-  "srs": {
-    "daily_new_limit": 20
-  }
-}
-```
-
----
-
-## 工作流
-
-```text
-┌─────────────────┐       REST + SSE       ┌──────────────────────┐
-│ React + Vite UI │ ◄────────────────────► │ FastAPI · port 1400  │
-└─────────────────┘                         └──────────┬───────────┘
-                                                     │
-                              ┌──────────────────────┼──────────────────┐
-                              ▼                      ▼                  ▼
-                        words.json          Ollama / DeepSeek       FSRS-4.5
-                       本地原子写入           AI 内容补全           复习调度
-```
-
-后端会用锁保护读写，并通过临时文件原子替换 `words.json`；检测到数据损坏时会保留备份。前端构建产物由 FastAPI 直接托管，因此部署时不需要额外的 Web 服务。
-
----
-
-## 项目结构
-
-```text
-vocabulary-notebook/
-├── app.py                 # FastAPI 应用、API、SSE 与静态文件托管
-├── config.py              # Provider 与 SRS 配置
-├── fsrs.py                # FSRS-4.5 调度算法
-├── words.json             # 本地词库，已被 Git 忽略
-├── templates/             # PDF 导出模板
-├── tests/                 # 后端、提示词与复习测试
-└── frontend/
-    ├── src/
-    │   ├── pages/         # 单词列表、详情、新建、复习
-    │   ├── components/    # 闪卡、导出、模型状态等组件
-    │   └── api.js         # 前端 API 封装
-    └── dist/              # 生产构建产物
-```
-
----
+测试可用 `VOCAB_DATA_FILE` 指定独立本地缓存。不要把个人词库、令牌或完整备份提交到公共仓库。
 
 ## 开发与验证
 
-启动前后端开发服务：
-
 ```bash
-./start.sh
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
+cd frontend
+npm ci
+npm run build
 ```
 
-运行后端测试：
+前端修改后必须重新构建。上游误提交的 `node_modules` 已从版本管理移除。测试覆盖双设备编辑与复习合并、删除、离线重试、文件夹重启、Drive HTTP 模拟及备份恢复。真实 API 直连需要自己的 Google OAuth 客户端。
 
-```bash
-./.venv/bin/pytest -q
-```
-
-前端代码修改后必须重新构建，FastAPI 才能托管最新版本：
-
-```bash
-cd frontend && npm run build
-```
-
----
-
-## 数据与隐私
-
-- 单词、复习状态和历史记录只写入本机 `words.json`
-- `words.json` 与真实 `config.json` 均不会进入 Git
-- Ollama 模式可以完全本地运行
-- DeepSeek 模式会把补全请求发送到 DeepSeek API，请按自己的隐私要求选择
-
-你的词库不是平台的人质。它只是一个你随时能打开、备份和带走的 JSON 文件。
-
----
-
-## License
-
-[MIT](https://opensource.org/licenses/MIT) © 2026 [Eric Zhou](https://ericzhou.net/)
+核心扩展：`sync_storage.py`（变更与 FSRS 重放）、`drive_sync.py`（文件夹、Drive API、OAuth）、`instance_lock.py`（本地单进程保护）、`frontend/src/Books.jsx` 和 `frontend/src/pages/Settings.jsx`。
