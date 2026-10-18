@@ -229,6 +229,9 @@ def client(tmp_path, monkeypatch):
     path = tmp_path / "words.json"
     monkeypatch.setattr(app, "DATA_FILE", path)
     monkeypatch.setattr(app, "cloud", engine(path, tmp_path / "secrets"))
+    monkeypatch.setattr(app.config, "_CONFIG", {"provider": "deepseek", "sync": {"credentials_dir": str(tmp_path / "secrets")}})
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
     # No lifespan: these API checks must not contact a real local AI or Drive account.
     return TestClient(app.app)
 
@@ -291,18 +294,84 @@ def test_cache_lock_rejects_second_process_and_releases(tmp_path):
     instance_lock.acquire(path).close()
 
 
-def test_ollama_request_stays_local_and_includes_course_context(monkeypatch):
+def test_deepseek_request_auth_json_and_course_context(monkeypatch):
     seen = []
     def handle(request):
         seen.append(request)
-        return httpx.Response(200, json={"response": json.dumps({"phonetic": "/test/", "definition": "n. 对价", "example": "Consideration is required."})})
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"phonetic": "/test/", "definition": "n. 对价", "example": "Consideration is required."})}}]})
     real_client = httpx.AsyncClient
     def local_client(**kwargs):
-        assert kwargs["trust_env"] is False
         return real_client(transport=httpx.MockTransport(handle), **kwargs)
     monkeypatch.setattr(app.httpx, "AsyncClient", local_client)
-    monkeypatch.setattr(app.config, "get_ollama_config", lambda: {"url": "http://127.0.0.1:11434/api/generate", "model": "test"})
+    monkeypatch.setattr(app.config, "get_deepseek_config", lambda: {"api_key": "test-secret", "model": "deepseek-flash"})
     result = asyncio.run(app.enrich_word("consideration", "法律：合同法"))
     assert result[1] == "n. 对价"
-    assert len(seen) == 1 and seen[0].url.host == "127.0.0.1"
-    assert "法律：合同法" in json.loads(seen[0].content)["prompt"]
+    assert len(seen) == 1 and str(seen[0].url) == "https://api.deepseek.com/chat/completions"
+    assert seen[0].headers["Authorization"] == "Bearer test-secret"
+    payload = json.loads(seen[0].content)
+    assert "法律：合同法" in payload["messages"][0]["content"]
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["thinking"] == {"type": "disabled"}
+
+
+def test_missing_deepseek_key_never_sends_network_request(monkeypatch):
+    monkeypatch.setattr(app.config, "get_deepseek_config", lambda: {"api_key": "", "model": "deepseek-flash"})
+    monkeypatch.setattr(app.httpx, "AsyncClient", lambda **_: pytest.fail("No key must not send a request"))
+    assert asyncio.run(app.enrich_word("bond")) == ("", "", "")
+    assert asyncio.run(app.health_check())["status"] == "not_configured"
+
+
+@pytest.mark.parametrize("status", [401, 402, 429, 500])
+def test_deepseek_failure_is_safe_and_does_not_log_keys(monkeypatch, caplog, status):
+    secret = "private-test-secret"
+    real_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(status, json={"error": {"message": secret}}))
+    monkeypatch.setattr(app.httpx, "AsyncClient", lambda **kwargs: real_client(transport=transport, **kwargs))
+    monkeypatch.setattr(app.config, "get_deepseek_config", lambda: {"api_key": secret, "model": "deepseek-flash"})
+    assert asyncio.run(app.enrich_word("bond")) == ("", "", "")
+    assert secret not in caplog.text
+
+
+def test_ai_settings_keep_key_local_and_out_of_backups(client, tmp_path):
+    result = client.put("/api/ai/settings", json={"api_key": "test-private-key", "model": "deepseek-flash"})
+    assert result.status_code == 200
+    assert result.json()["configured"] is True
+    assert "test-private-key" not in result.text
+    assert "test-private-key" not in client.get("/api/ai/settings").text
+    assert "test-private-key" not in client.get("/api/library/export").text
+    local = json.loads((tmp_path / "secrets" / "deepseek.json").read_text())
+    assert local["api_key"] == "test-private-key"
+    assert client.put("/api/ai/settings", json={"api_key": "", "model": "deepseek-v4-pro"}).status_code == 200
+    assert app.config.get_deepseek_config()["api_key"] == "test-private-key"
+    assert app.config.get_deepseek_config()["model"] == "deepseek-v4-pro"
+    assert client.put("/api/ai/settings", json={"api_key": "contains spaces"}).status_code == 422
+
+
+def test_environment_key_overrides_local_settings_without_copying_it(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "env-secret")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "env-model")
+    assert client.put("/api/ai/settings", json={"api_key": "", "model": "deepseek-flash"}).status_code == 200
+    assert app.config.get_deepseek_config() == {"api_key": "env-secret", "model": "env-model"}
+    assert "env-secret" not in (tmp_path / "secrets" / "deepseek.json").read_text()
+
+
+def test_health_uses_only_non_generation_request(monkeypatch):
+    seen = []
+    def handle(request):
+        seen.append(request)
+        return httpx.Response(200, json={"data": [{"id": "deepseek-flash"}]})
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(app.httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(handle), **kwargs))
+    monkeypatch.setattr(app.config, "get_deepseek_config", lambda: {"api_key": "test-secret", "model": "deepseek-flash"})
+    assert asyncio.run(app.health_check())["status"] == "connected"
+    assert len(seen) == 1 and seen[0].method == "GET" and str(seen[0].url) == "https://api.deepseek.com/models"
+
+
+def test_old_ollama_config_upgrades_without_losing_sync(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"provider": "ollama", "srs": {"daily_new_limit": 10}, "sync": {"interval_seconds": 60}}))
+    monkeypatch.setattr(app.config, "CONFIG_FILE", config_file)
+    monkeypatch.setattr(app.config, "_CONFIG", {})
+    assert app.config.get_provider() == "deepseek"
+    assert app.config.get_srs_config()["daily_new_limit"] == 10
+    assert app.config.get_sync_config()["interval_seconds"] == 60

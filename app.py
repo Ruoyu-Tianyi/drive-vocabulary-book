@@ -135,7 +135,7 @@ STATIC_DIR = Path("frontend/dist")
 # 必须在 startup 事件中初始化，否则 asyncio.Queue() 会绑定到错误的 event loop（Python 3.9）
 _event_queue = None
 
-# 补全任务队列 — 单 worker 串行消费，避免 Ollama 并发排队超时
+# 补全任务队列 — 单 worker 串行消费，控制 DeepSeek 请求并发
 _enrich_queue: Optional[asyncio.Queue] = None
 # word_id → 上次尝试时间戳，冷却期内不重复入队
 _enriching_ids: dict[str, float] = {}
@@ -702,26 +702,28 @@ Reply ONLY with a JSON object, no other text:
     if context:
         prompt += "\nCourse context (use for sense and example selection): " + context[:600]
     try:
-        ollama_cfg = config.get_ollama_config()
-        async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
-            resp = await client.post(ollama_cfg["url"], json={
-                "model": ollama_cfg["model"], "prompt": prompt, "stream": False,
-            })
+        settings = config.get_deepseek_config()
+        if not settings["api_key"]:
+            return "", "", ""
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post("https://api.deepseek.com/chat/completions", json={
+                "model": settings["model"], "messages": [{"role": "user", "content": prompt}],
+                "response_format": {"type": "json_object"}, "thinking": {"type": "disabled"},
+                "max_tokens": 2048, "stream": False,
+            }, headers={"Authorization": "Bearer " + settings["api_key"]})
             resp.raise_for_status()
-            text = resp.json()["response"].strip()
+            text = (resp.json()["choices"][0]["message"]["content"] or "").strip()
 
         match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
         if not match:
-            logger.warning(f"[enrich] {word} — 响应中未找到 JSON 对象：{text[:200]}")
+            logger.warning("[enrich] DeepSeek 响应中未找到 JSON 对象")
             return "", "", ""
         data = json.loads(match.group())
-        return (
-            data.get("phonetic", ""),
-            data.get("definition", ""),
-            data.get("example", ""),
-        )
+        fields = tuple(data.get(key, "") for key in ("phonetic", "definition", "example"))
+        return fields if all(isinstance(value, str) for value in fields) else ("", "", "")
     except Exception as e:
-        logger.warning(f"[enrich] {word} — 请求失败：{type(e).__name__}: {e}")
+        code = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else "unavailable"
+        logger.warning("[enrich] DeepSeek 请求失败：%s (%s)", type(e).__name__, code)
         return "", "", ""
 
 
@@ -761,19 +763,35 @@ async def event_stream(request: Request):
 
 @app.get("/api/health")
 async def health_check():
-    """检测当前配置的 Provider 是否可达"""
+    """Check credentials/model availability without a billable generation request."""
+    settings = config.get_deepseek_config()
+    result = {"provider": "deepseek", "model": settings["model"]}
+    if not settings["api_key"]:
+        return {**result, "status": "not_configured"}
     try:
-        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
-            if config.get_provider() == "ollama":
-                ollama_cfg = config.get_ollama_config()
-                # Ollama API: 用 /api/tags 检测
-                url = ollama_cfg["url"].replace("/api/generate", "/api/tags")
-                resp = await client.get(url)
-                if resp.is_success:
-                    return {"provider": "ollama", "status": "connected"}
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get("https://api.deepseek.com/models", headers={"Authorization": "Bearer " + settings["api_key"]})
+            if resp.status_code == 401:
+                return {**result, "status": "unauthorized"}
+            if resp.is_success:
+                available = {item["id"] for item in resp.json().get("data", [])}
+                return {**result, "status": "connected" if settings["model"] in available else "model_unavailable"}
     except Exception:
         pass
-    return {"provider": config.get_provider(), "status": "disconnected"}
+    return {**result, "status": "disconnected"}
+
+
+@app.get("/api/ai/settings")
+def ai_settings():
+    return config.get_ai_settings()
+
+
+@app.put("/api/ai/settings")
+def update_ai_settings(body: dict):
+    try:
+        return config.save_ai_settings(body.get("api_key", ""), body.get("model", config.DEFAULT_MODEL))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 # ─── API: 单词 CRUD ───────────────────────────────────────
@@ -1280,7 +1298,7 @@ async def create_word(body: dict):
 
 
 async def _enrich_worker():
-    """单 worker 从队列串行取任务，逐个调用 Ollama，避免并发排队超时"""
+    """单 worker 串行调用 DeepSeek，保留人工编辑内容。"""
     global _enrich_current, _enrich_batch_done
     import logging
     logger = logging.getLogger("uvicorn")
@@ -1306,7 +1324,7 @@ async def _enrich_worker():
                         "type": "enrich_failed",
                         "word_id": word_id,
                         "word": word_text,
-                        "reason": "本地 Ollama 未返回有效内容，请检查模型是否启动或手动填写释义",
+                        "reason": "DeepSeek 未返回有效内容，请检查本机 API Key、余额与网络，或手动填写释义",
                     })
                 _enriching_ids.pop(word_id, None)
                 continue

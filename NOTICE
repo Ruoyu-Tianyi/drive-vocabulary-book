@@ -10,6 +10,6 @@ FSRS implementation, exports, and regression tests form the foundation.
 The original Git history is retained. See docs/UPSTREAM_README.md.
 
 Ruoyu-Tianyi's extensions add Google Drive synchronization, multiple notebooks,
-immutable learning histories, conflict-safe merging, local-only AI configuration,
+immutable learning histories, conflict-safe merging, DeepSeek API configuration,
 Windows startup, and sync/backup settings. This is an independently maintained
 derivative; no affiliation with or endorsement by the upstream author is implied.

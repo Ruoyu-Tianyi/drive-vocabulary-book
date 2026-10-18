@@ -1,10 +1,13 @@
 """配置加载与校验"""
 import json
+import os
+import threading
 from pathlib import Path
-from urllib.parse import urlparse
 
 CONFIG_FILE = Path("config.json")
 _CONFIG: dict = {}
+_AI_LOCK = threading.RLock()
+DEFAULT_MODEL = "deepseek-flash"
 
 
 def load_config() -> dict:
@@ -13,8 +16,7 @@ def load_config() -> dict:
         return _CONFIG
 
     if not CONFIG_FILE.exists():
-        _CONFIG = {"provider": "ollama", "ollama": {
-            "url": "http://127.0.0.1:11434/api/generate", "model": "qwen3:8b"}}
+        _CONFIG = {"provider": "deepseek", "deepseek": {"model": DEFAULT_MODEL}}
         return _CONFIG
 
     try:
@@ -22,18 +24,14 @@ def load_config() -> dict:
     except json.JSONDecodeError as e:
         raise RuntimeError(f"config.json 格式错误：{e}")
 
-    provider = _CONFIG.get("provider", "")
-    if provider == "ollama":
-        ollama = _CONFIG.get("ollama", {})
-        if not ollama.get("url") or not ollama.get("model"):
-            raise RuntimeError("provider=ollama 时，ollama.url 和 ollama.model 不能为空")
-        url = urlparse(ollama["url"])
-        if url.scheme != "http" or url.hostname not in ("localhost", "127.0.0.1", "::1"):
-            _CONFIG = {}
-            raise RuntimeError("Ollama 必须使用本机 http://127.0.0.1 或 localhost 地址")
-    else:
+    if not isinstance(_CONFIG, dict):
         _CONFIG = {}
-        raise RuntimeError("此版本只使用本地 Ollama，请设置 provider=ollama")
+        raise RuntimeError("config.json 必须是 JSON 对象")
+    if _CONFIG.get("provider", "deepseek") not in ("deepseek", "ollama"):
+        _CONFIG = {}
+        raise RuntimeError("此版本使用 DeepSeek API，请设置 provider=deepseek")
+    # Upgrade old Ollama configs in memory while retaining notebook/sync settings.
+    _CONFIG["provider"] = "deepseek"
 
     return _CONFIG
 
@@ -42,8 +40,42 @@ def get_provider() -> str:
     return load_config()["provider"]
 
 
-def get_ollama_config() -> dict:
-    return load_config().get("ollama", {})
+def get_deepseek_config() -> dict:
+    with _AI_LOCK:
+        configured = load_config().get("deepseek", {})
+        path = Path(get_sync_config()["credentials_dir"]) / "deepseek.json"
+        local = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+        key = os.environ.get("DEEPSEEK_API_KEY") or local.get("api_key") or configured.get("api_key", "")
+        model = os.environ.get("DEEPSEEK_MODEL") or local.get("model") or configured.get("model") or DEFAULT_MODEL
+        if not isinstance(key, str) or not isinstance(model, str) or not model.strip() or len(model) > 100:
+            raise RuntimeError("DeepSeek 配置无效，请检查本机 API Key 和模型名称")
+        return {"api_key": key.strip(), "model": model.strip()}
+
+
+def get_ai_settings() -> dict:
+    settings = get_deepseek_config()
+    return {"provider": "deepseek", "configured": bool(settings["api_key"]), "model": settings["model"],
+            "environment_key": bool(os.environ.get("DEEPSEEK_API_KEY"))}
+
+
+def save_ai_settings(api_key: str, model: str):
+    from sync_storage import atomic_write
+    with _AI_LOCK:
+        current = get_deepseek_config()
+        if not isinstance(api_key, str) or len(api_key) > 1000 or any(c.isspace() for c in api_key.strip()):
+            raise ValueError("API Key 格式无效")
+        if not isinstance(model, str) or not model.strip() or len(model) > 100:
+            raise ValueError("模型名称不能为空且不能超过 100 个字符")
+        # A blank password field preserves an existing key without exposing it to the UI.
+        path = Path(get_sync_config()["credentials_dir"]) / "deepseek.json"
+        if not api_key.strip() and not current["api_key"]:
+            raise ValueError("请填写 DeepSeek API Key")
+        local = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+        local.update(model=model.strip())
+        if api_key.strip():
+            local["api_key"] = api_key.strip()
+        atomic_write(path, local)
+    return get_ai_settings()
 
 
 def get_srs_config() -> dict:

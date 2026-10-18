@@ -1,8 +1,8 @@
 {
-  "provider": "ollama",
-  "ollama": {
-    "url": "http://127.0.0.1:11434/api/generate",
-    "model": "qwen3:8b"
+  "provider": "deepseek",
+  "deepseek": {
+    "model": "deepseek-flash",
+    "api_key": ""
   },
   "srs": {
     "daily_new_limit": 20

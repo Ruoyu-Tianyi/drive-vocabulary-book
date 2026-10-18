@@ -7,6 +7,16 @@ export default function Settings() {
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [folderPath, setFolderPath] = useState('')
+  const [ai, setAi] = useState(null)
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('deepseek-flash')
+  useEffect(() => {
+    let alive = true
+    libraryRequest('/ai/settings').then(settings => {
+      if (alive) { setAi(settings); setModel(settings.model) }
+    }).catch(err => { if (alive) setMessage(err.message) })
+    return () => { alive = false }
+  }, [])
   useEffect(() => {
     let alive = true
     const refresh = () => libraryRequest('/sync/status').then(next => { if (alive) setStatus(next) }).catch(err => { if (alive) setMessage(err.message) })
@@ -29,6 +39,24 @@ export default function Settings() {
   return <div className="settings-page">
     <h2>同步与备份</h2>
     <section className="settings-card">
+      <h3>DeepSeek API 词汇补全</h3>
+      <p>应用在本机运行，DeepSeek 负责生成音标、中文释义和例句，无需安装 Ollama 或下载模型。</p>
+      <p>补全时会把单词及单词本的课程说明发送给 DeepSeek，按其 API 规则计费。完整词库和复习记录继续通过 Drive 同步。</p>
+      <form onSubmit={event => { event.preventDefault(); act(async () => {
+        const result = await libraryRequest('/ai/settings', 'PUT', { api_key: apiKey, model })
+        setAi(result); setApiKey(''); window.dispatchEvent(new Event('ai-settings-changed'))
+        setMessage('DeepSeek 配置已保存到本机。请查看顶部连接状态，然后添加单词或点击“补全缺失”。')
+      }) }}>
+        <div className="form-group"><label htmlFor="deepseek-key">API Key</label>
+          <input id="deepseek-key" type="password" autoComplete="new-password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={ai?.configured ? '已配置；留空保留现有密钥' : '在本机输入 DeepSeek API Key'} /></div>
+        <div className="form-group"><label htmlFor="deepseek-model">模型名称</label>
+          <input id="deepseek-model" type="text" required maxLength={100} value={model} onChange={e => setModel(e.target.value)} /></div>
+        <button className="btn btn-primary" disabled={busy}>保存 DeepSeek 配置</button>
+      </form>
+      <p className="settings-note">Key 仅存于当前电脑，不回显、不进入 Drive 或 Git。第二台电脑各自配置。{ai?.environment_key ? '当前环境变量 DEEPSEEK_API_KEY 优先于设置页保存的 Key。' : ''}</p>
+      <p><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">创建 DeepSeek API Key ↗</a></p>
+    </section>
+    <section className="settings-card">
       <h3>方式一：Google Drive 同步文件夹（推荐）</h3>
       <p>无需 OAuth 客户端。两台电脑安装并登录 Google Drive 桌面版，在云端硬盘中新建专用文件夹，然后分别填写它在本机的路径。</p>
       <form onSubmit={event => { event.preventDefault(); act(async () => {
@@ -49,7 +77,7 @@ export default function Settings() {
     <section className="settings-card">
       <h3>方式二：Google Drive API 直连（可选）</h3>
       <p>使用你已有的 Drive 空间。两台电脑使用同一个 Google 账号、同一个桌面 OAuth 客户端，各自授权。</p>
-      <p>应用只申请自己的隐藏数据区权限。AI 使用本机 Ollama，模型与授权信息留在当前电脑。</p>
+      <p>Drive 只申请自己的隐藏数据区权限；DeepSeek API Key 与 Drive 授权信息分别保存在本机。</p>
       <ol className="setup-steps">
         <li>在 <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Cloud</a> 启用 Google Drive API。</li>
         <li>配置 OAuth 同意屏幕，创建“桌面应用”客户端，下载客户端 JSON。个人测试时，将自己的账号加入测试用户。</li>

@@ -1,14 +1,34 @@
 # 云端词汇本 · Drive Vocabulary Book
 
-**本地运行 AI，Google Drive 保存并同步词汇与学习记录。** 面向两台私人电脑使用，支持为法律、金融等课程创建独立单词本。
+**本机运行词汇本，DeepSeek API 补全，Google Drive 同步词汇与学习记录。** 支持将新电脑作为日常主力、旧电脑作为备用，按法律、金融等课程创建独立单词本。
 
 基于 **[Eric Zhou 的 Vocabulary Notebook](https://github.com/Eric-Zhou-0302/vocabulary-notebook)** 开发，保留原项目提交历史与 MIT 版权声明。原项目提供 FastAPI、React、AI 补全、FSRS 复习及导出；本项目扩展云同步、多单词本、逐次复习记录与冲突合并。[来源说明](NOTICE) · [原 README](docs/UPSTREAM_README.md) · [MIT License](LICENSE)
+
+## Agent 安装提示词
+
+在另一台电脑把下面整段复制给可操作本机的 Agent 即可。常规安装直接使用仓库附带的前端，无需 Node.js、Ollama 或模型文件。API Key 在该电脑的设置页输入。
+
+```text
+请在这台私人电脑上直接安装并配置“云端词汇本”，将这台电脑作为我的日常主力机。
+
+GitHub 仓库：https://github.com/Ruoyu-Tianyi/drive-vocabulary-book
+请先读取最新 README 和适用的 AGENTS.md，然后实际执行安装，不要只给我步骤。
+
+1. 检查操作系统、Git 和 Python 3.10+。缺少时通过官方渠道安装；遇到系统权限、登录或安装条款时说明需要我完成的具体步骤。Windows 默认使用 D:\000_Workspace\云端词汇本；D 盘不可用则使用用户 Documents 下的 drive-vocabulary-book。本程序放在本地非同步目录。
+2. 克隆上述仓库的 main 分支。如果已存在这个项目，先检查工作区与远程，保留已有词库、配置和未提交修改，安全更新，不执行强制重置或覆盖。
+3. 创建项目独立 .venv 并安装 requirements.txt。使用已包含的 frontend/dist，常规安装无需 Node.js。此版本使用 DeepSeek API，不安装 Ollama 或下载模型。
+4. 检查是否已有 DEEPSEEK_API_KEY。没有时先启动应用，引导我在“同步与备份 → DeepSeek API 词汇补全”中自己输入 Key；不要让我把 Key 贴到聊天、命令行参数或仓库。默认模型 deepseek-flash，可按我的账号可用模型调整。Key 只留本机，各电脑分别配置，不复制另一台的 .secrets 或令牌。
+5. 优先检测已安装并登录的 Google Drive 桌面版，找到同一 Google 账号已有的“我的云端硬盘/Drive Vocabulary Book”文件夹。等待该文件夹完整下载并设为可离线使用，然后通过设置页连接它在本机的绝对路径。不同电脑的盘符可以不同。不要另建同名空词库，不要覆盖或清空云端 library.json / vocabulary-*.json。如果 Drive 尚未登录或尚未出现已有文件夹，只暂停这项并告诉我需要完成的登录/等待步骤，继续其他安装工作。
+6. 启动词汇本，访问 http://127.0.0.1:1400，确认已有“法律英语”“金融英语”等单词本从云端恢复。同步采用双向合并，新电脑作为主力不需要清空或禁用旧电脑。保留两台各自的 words.json 本地缓存。
+7. 检查 /api/health、/api/sync/status 和浏览器错误。Key 未配置时应标记为待配置，仍能手动保存和同步。连接检测不发送收费的生成请求；需要测试真实词汇补全时，使用我指定的一个词验证，保留我的正式词汇与学习进度。没有 Key 时不要声称真实 DeepSeek 调用已通过。
+8. 完成后告诉我本机安装目录、启动方式、Drive 路径、当前 AI 配置状态、检查结果及任何仍需我处理的事项。默认无需创建远程部署、开机自启或推送任何个人数据。
+```
 
 ## 功能
 
 - 创建、重命名单词本与填写课程说明；相同拼写可在法律、金融本中保留不同释义。
 - 按当前单词本搜索、筛选日期、复习与导出，也可跨本浏览。
-- 本机 Ollama 参考课程领域补全音标、中文释义和例句；手动内容不会被 AI 覆盖。
+- DeepSeek API 参考课程领域补全音标、中文释义和例句；手动内容不会被 AI 覆盖。
 - FSRS 间隔复习，保留每次评分、复习次数、遗忘次数与到期时间。
 - 两种 Google Drive 同步方式，离线修改后自动合并。
 - 完整 JSON 备份恢复，兼容原项目的 `words.json`。
@@ -37,18 +57,15 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## 本地 AI
+## DeepSeek API 配置
 
-安装并启动 [Ollama](https://ollama.com/)，下载适合本机的模型，例如：
+从 [DeepSeek 平台](https://platform.deepseek.com/api_keys) 创建 API Key，在“同步与备份 → DeepSeek API 词汇补全”填写并保存。Key 写入本机 `.secrets/deepseek.json`，页面不回显，且不进入 Drive 或 Git。每台电脑各自配置；修改后立即生效。
 
-```bash
-ollama pull qwen3:8b
-ollama serve
-```
+也支持启动进程的环境变量 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL`。优先级为环境变量 > 本机设置页 > `config.json`。`config.json.example` 可复制为 `config.json`，示例中的空 Key 不影响启动。
 
-Ollama 桌面程序已运行时无需再执行 `ollama serve`。默认模型为 `qwen3:8b`，可复制 `config.json.example` 为 `config.json` 修改模型名称。未启动 AI 时仍可保存、手动编辑、同步和复习；之后点击“补全缺失”即可补全。
+默认使用当前官方模型名 `deepseek-flash`，请求 `https://api.deepseek.com/chat/completions`，采用 JSON Output 并关闭深度思考。可在设置页填写其他账号可用模型。[官方接入说明](https://api-docs.deepseek.com/) · [JSON 输出](https://api-docs.deepseek.com/guides/json_mode/) · [思考开关](https://api-docs.deepseek.com/guides/thinking_mode/)
 
-此版本限定 AI 使用本机 HTTP 地址，移除了云端 DeepSeek 调用。模型、配置和令牌不上传到词库。
+补全会把当前单词与单词本的领域说明发送给 DeepSeek，并按其 API 规则计费；不会上传整本词库或复习历史。连接检查通过 `GET /models` 完成，不生成词汇。没有 Key、断网、鉴权失败或额度不足时，手动保存、同步和已有词汇复习仍可用；恢复后点击“补全缺失”。从旧 Ollama 版本更新时会在内存中切换到 DeepSeek，保留原有同步与复习配置。
 
 ## 同步方式一：Drive 桌面同步文件夹（推荐）
 
@@ -61,7 +78,7 @@ Ollama 桌面程序已运行时无需再执行 `ollama serve`。默认模型为 
 
 **“待写入文件夹为 0”表示变更已交给 Drive 桌面版；实际上传/下载由桌面版完成。关闭电脑前还应确认 Drive 的同步状态为已完成。** 另一台电脑收到文件后，应用下一轮自动合并。
 
-两台电脑的程序目录、模型、`.venv`、`.secrets` 和 `words.json` 分别留在本机。云端目录只保存 `library.json` 身份标识及不可变的 `vocabulary-*.json` 变更文件。不要将整个项目或 `.secrets` 放入同步目录，不要手动编辑/删除变更文件。
+两台电脑的程序目录、`.venv`、`.secrets` 和 `words.json` 分别留在本机。云端目录只保存 `library.json` 身份标识及不可变的 `vocabulary-*.json` 变更文件。不要将整个项目或 `.secrets` 放入同步目录，不要手动编辑/删除变更文件。
 
 ChatGPT 的 Drive 插件可帮助聊天读写文件，这个独立应用不依赖 ChatGPT 持续运行，也不读取或导出聊天插件的授权令牌。[OpenAI 插件授权说明](https://developers.openai.com/plugins/build/auth)
 
@@ -107,8 +124,8 @@ ChatGPT 的 Drive 插件可帮助聊天读写文件，这个独立应用不依�
 
 ```json
 {
-  "provider": "ollama",
-  "ollama": {"url": "http://127.0.0.1:11434/api/generate", "model": "qwen3:8b"},
+  "provider": "deepseek",
+  "deepseek": {"model": "deepseek-flash", "api_key": ""},
   "srs": {"daily_new_limit": 20},
   "sync": {"interval_seconds": 30, "credentials_dir": ".secrets"}
 }

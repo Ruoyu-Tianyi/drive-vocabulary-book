@@ -10,7 +10,7 @@ function useProviderLabel() {
       .then(r => r.json())
       .then(d => {
         const p = d.provider
-        setLabel(p === 'ollama' ? 'Ollama' : p === 'deepseek' ? 'DeepSeek' : p || '模型')
+        setLabel(p === 'deepseek' ? 'DeepSeek' : p || '模型')
       })
       .catch(() => {})
   }, [])
@@ -81,7 +81,7 @@ export default function WordNew() {
           />
         </div>
         <div className="form-group"><label htmlFor="new-definition">课程释义（可选）</label>
-          <textarea id="new-definition" rows={3} value={definition} onChange={e => setDefinition(e.target.value)} placeholder="粘贴课堂定义；留空由本地 Ollama 补全" /></div>
+          <textarea id="new-definition" rows={3} value={definition} onChange={e => setDefinition(e.target.value)} placeholder="粘贴课堂定义；留空由 DeepSeek API 补全" /></div>
         <div className="btn-group">
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? '保存中…' : '保存'}
@@ -91,7 +91,7 @@ export default function WordNew() {
           </button>
         </div>
         <p style={{ marginTop: 14, fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
-          Enter 保存 · Esc 返回 · 留空释义由本地 {providerLabel} 补充；离线也能保存
+          Enter 保存 · Esc 返回 · 留空释义由 {providerLabel} API 补充；离线也能保存
         </p>
       </form>
     </div>
