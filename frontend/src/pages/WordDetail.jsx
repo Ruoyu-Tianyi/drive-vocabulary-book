@@ -101,7 +101,7 @@ export default function WordDetail() {
                 <label htmlFor="edit-definition">释义</label>
                 <textarea id="edit-definition" rows={3} value={editDef} onChange={e => setEditDef(e.target.value)} />
               </div>
-              <div className="form-group"><label htmlFor="edit-phonetic">音标</label><input id="edit-phonetic" value={editPhonetic} onChange={e => setEditPhonetic(e.target.value)} /></div>
+              <div className="form-group"><label htmlFor="edit-phonetic">音标</label><input id="edit-phonetic" type="text" value={editPhonetic} onChange={e => setEditPhonetic(e.target.value)} /></div>
               <div className="form-group"><label htmlFor="edit-example">课程例句</label><textarea id="edit-example" rows={3} value={editExample} onChange={e => setEditExample(e.target.value)} /></div>
               {saveError && <p role="alert">{saveError}</p>}
               <div className="btn-group">

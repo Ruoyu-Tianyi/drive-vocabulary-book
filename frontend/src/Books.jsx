@@ -84,7 +84,7 @@ export function BookPicker() {
         <h2 id="book-dialog-title">{editing.id ? '编辑单词本' : '新建单词本'}</h2>
         <form onSubmit={save}>
           <div className="form-group"><label htmlFor="book-name">名称</label>
-            <input id="book-name" autoFocus required maxLength={80} placeholder="例如：法律英语、金融课程" value={name} onChange={e => setName(e.target.value)} /></div>
+            <input id="book-name" type="text" autoFocus required maxLength={80} placeholder="例如：法律英语、金融课程" value={name} onChange={e => setName(e.target.value)} /></div>
           <div className="form-group"><label htmlFor="book-description">课程或领域说明</label>
             <textarea id="book-description" maxLength={500} rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="例如：合同法课程中的术语、课堂例句" /></div>
           {message && <p role="alert">{message}</p>}

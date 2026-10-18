@@ -37,7 +37,7 @@ export default function Settings() {
         setMessage('同步文件夹已连接。请等待 Google Drive 桌面版完成上传。')
       }) }}>
         <div className="form-group"><label htmlFor="sync-folder-path">同步文件夹的绝对路径</label>
-          <input id="sync-folder-path" value={folderPath} onChange={e => setFolderPath(e.target.value)} placeholder={status?.folder_path || '例如：G:\\我的云端硬盘\\Drive Vocabulary Book'} required /></div>
+          <input id="sync-folder-path" type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)} placeholder={status?.folder_path || '例如：G:\\我的云端硬盘\\Drive Vocabulary Book'} required /></div>
         <button className="btn btn-primary" disabled={busy || status?.syncing || status?.auth_pending}>连接同步文件夹</button>
       </form>
       {status?.folder_enabled && <p>已连接：{status.folder_path}</p>}
@@ -63,7 +63,7 @@ export default function Settings() {
       <div className="btn-group">
         <button className="btn btn-primary" disabled={busy || !status?.configured || status?.auth_pending || status?.syncing || status?.folder_enabled} onClick={() => act(async () => {
           const result = await libraryRequest('/sync/connect', 'POST'); setUrl(result.authorization_url)
-        })}>{status?.auth_pending ? '等待 Google 授权…' : status?.connected ? '重新授权' : '连接 Google Drive'}</button>
+        })}>{status?.auth_pending ? '等待 Google 授权…' : status?.connected && !status.folder_enabled ? '重新授权' : '连接 Google Drive'}</button>
         {status?.connected && !status.folder_enabled && <button className="btn btn-secondary" disabled={busy || status.syncing || status.auth_pending} onClick={() => act(async () => {
           await libraryRequest('/sync/disconnect', 'POST'); setUrl(''); setMessage('此电脑已断开连接。本地词库和云端数据均保留。')
         })}>断开此电脑</button>}
