@@ -46,6 +46,11 @@ export async function createWord(word, definition = '', notebook_id = activeNote
   return res.json()
 }
 
+export async function retryWordEnrichment(id) {
+  const result = await request(`/words/${id}/enrich`, { method: 'POST' })
+  return result.json()
+}
+
 export async function updateWord(id, data) {
   const res = await request(`/words/${id}`, {
     method: 'PUT',

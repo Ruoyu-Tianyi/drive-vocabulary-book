@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { createWord } from '../api'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { createWord, fetchWord, retryWordEnrichment } from '../api'
 import { useBooks } from '../Books'
+import { useSSE } from '../useSSE'
 
 function useProviderLabel() {
   const [label, setLabel] = useState('模型')
@@ -24,20 +25,75 @@ export default function WordNew() {
   const [bookId, setBookId] = useState(active || 'default')
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState(null)
+  const [addedWords, setAddedWords] = useState([])
+  const addedRef = useRef([])
+  const inputRef = useRef(null)
   const navigate = useNavigate()
   const providerLabel = useProviderLabel()
+  useEffect(() => { addedRef.current = addedWords }, [addedWords])
+  const updateAdded = useCallback(result => {
+    setAddedWords(previous => previous.map(entry => {
+      if (entry.word.id !== result.word.id) return entry
+      if (entry.word.definition && ['queued', 'processing'].includes(result.enrichment?.status)) return entry
+      return result
+    }))
+  }, [])
+  const handleEnriched = useCallback((id, fields) => {
+    setAddedWords(previous => previous.map(entry => entry.word.id === id
+      ? { word: { ...entry.word, ...fields }, enrichment: { status: 'ready' } } : entry))
+    window.dispatchEvent(new Event('review-stats-changed'))
+  }, [])
+  const handleFailed = useCallback((id, _word, reason) => {
+    setAddedWords(previous => previous.map(entry => entry.word.id === id
+      ? { ...entry, enrichment: { status: 'failed', error: reason } } : entry))
+  }, [])
+  useSSE({ onEnriched: handleEnriched, onEnrichFailed: handleFailed })
+  const hasPending = addedWords.some(entry => ['queued', 'processing'].includes(entry.enrichment?.status))
+  useEffect(() => {
+    if (!hasPending) return
+    let alive = true
+    let running = false
+    async function refresh() {
+      if (running) return
+      running = true
+      try {
+        const pending = addedRef.current.filter(entry => ['queued', 'processing'].includes(entry.enrichment?.status))
+        const results = await Promise.allSettled(pending.map(async entry => {
+          try { return await fetchWord(entry.word.id) }
+          catch (err) {
+            if (err.status === 404) return { ...entry, enrichment: { status: 'deleted' } }
+            throw err
+          }
+        }))
+        if (alive) results.forEach(result => { if (result.status === 'fulfilled') updateAdded(result.value) })
+      } finally { running = false }
+    }
+    // Polling also recovers the result when SSE disconnects or another tab consumes an event.
+    const timer = setInterval(refresh, 2000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [hasPending, updateAdded])
+
+  async function retry(entry) {
+    updateAdded({ ...entry, enrichment: { status: 'queued' } })
+    try { updateAdded(await retryWordEnrichment(entry.word.id)) }
+    catch (err) { updateAdded({ ...entry, enrichment: { status: 'failed', error: err.message } }) }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     if (!word.trim()) return
+    const submitted = word.trim()
+    const submittedDefinition = definition
     setLoading(true)
     try {
-      await createWord(word.trim(), definition, bookId)
-      setWord('')
-      setDefinition('')
+      const result = await createWord(submitted, submittedDefinition, bookId)
+      setAddedWords(previous => [result, ...previous].slice(0, 10))
+      setWord(current => current.trim() === submitted ? '' : current)
+      setDefinition(current => current === submittedDefinition ? '' : current)
+      inputRef.current?.focus()
       window.dispatchEvent(new Event('library-changed'))
       window.dispatchEvent(new Event('review-stats-changed'))
-      setToast({ type: 'info', msg: `「${word.trim()}」已保存` })
+      setToast({ type: 'info', msg: `「${submitted}」已保存` })
       setTimeout(() => setToast(null), 2000)
     } catch (err) {
       if (err.status === 409) {
@@ -71,6 +127,7 @@ export default function WordNew() {
           <label htmlFor="new-word">单词</label>
           <input
             id="new-word"
+            ref={inputRef}
             maxLength={200}
             type="text"
             value={word}
@@ -94,6 +151,33 @@ export default function WordNew() {
           Enter 保存 · Esc 返回 · 留空释义由 {providerLabel} API 补充；离线也能保存
         </p>
       </form>
+      {addedWords.length > 0 && <section className="added-words" aria-labelledby="added-words-heading">
+        <h3 id="added-words-heading">刚刚添加 · 即时记忆</h3>
+        <p className="book-description">本页展示最近添加的 10 个单词，所有词汇均已保存到单词本。</p>
+        <div aria-live="polite" aria-relevant="additions text">
+          {addedWords.map(entry => {
+            const current = entry.word
+            const status = entry.enrichment?.status
+            const pending = ['queued', 'processing'].includes(status)
+            return <article className="added-word-card" key={current.id}>
+              <div className="added-word-head"><h4>{current.word}</h4>
+                {current.phonetic && <span>{current.phonetic}</span>}
+                <span className="book-description">{books.find(book => book.id === current.notebook_id)?.name}</span></div>
+              {current.definition ? <p className="added-definition">{current.definition}</p>
+                : <p className="book-description">{pending ? '已保存，正在生成释义…'
+                  : status === 'not_configured' ? '单词已保存，请先配置 DeepSeek API Key，再重试补全。'
+                    : status === 'deleted' ? '这个单词已被删除。'
+                      : entry.enrichment?.error || '单词已保存，释义尚未生成。'}</p>}
+              {current.example && <blockquote className="added-example">{current.example}</blockquote>}
+              <div className="btn-group">
+                {!current.definition && status !== 'deleted' && <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => retry(entry)}>{pending ? '生成中…' : '重试补全'}</button>}
+                {status === 'not_configured' && <Link className="btn btn-ghost" to="/settings">配置 API Key</Link>}
+                {status !== 'deleted' && <Link className="btn btn-ghost" to={`/word/${current.id}`}>查看 / 编辑</Link>}
+              </div>
+            </article>
+          })}
+        </div>
+      </section>}
     </div>
   )
 }

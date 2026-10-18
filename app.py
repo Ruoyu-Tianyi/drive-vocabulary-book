@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
         raise
     _event_queue = asyncio.Queue()
     _enrich_queue = asyncio.Queue()
+    _enrich_jobs.clear()
+    _enriching_ids.clear()
     worker_task = asyncio.create_task(_enrich_worker())
     backup_task = asyncio.create_task(_periodic_backup_loop())
     sync_task = asyncio.create_task(_cloud_sync_loop())
@@ -139,6 +141,7 @@ _event_queue = None
 _enrich_queue: Optional[asyncio.Queue] = None
 # word_id → 上次尝试时间戳，冷却期内不重复入队
 _enriching_ids: dict[str, float] = {}
+_enrich_jobs: dict[str, dict] = {}
 _ENRICH_COOLDOWN = 300  # 秒
 # 进度追踪
 _enrich_current: Optional[str] = None
@@ -1193,10 +1196,15 @@ async def _enqueue_enrich_batch(items: list) -> None:
     if not items:
         return
     now = asyncio.get_event_loop().time()
+    added = 0
     for word_id, word_text in items:
+        if _enrich_jobs.get(word_id, {}).get("status") in ("queued", "processing"):
+            continue
+        _enrich_jobs[word_id] = {"status": "queued"}
         _enriching_ids[word_id] = now
         await _enrich_queue.put((word_id, word_text))
-    _enrich_batch_total += len(items)
+        added += 1
+    _enrich_batch_total += added
 
 
 def _maybe_reset_batch_if_idle() -> None:
@@ -1222,6 +1230,7 @@ async def enrich_missing(notebook_id: str = ""):
     missing = [
         w for w in data["words"]
         if not w.get("definition", "").strip()
+        and _enrich_jobs.get(w["id"], {}).get("status") not in ("queued", "processing")
         and _enriching_ids.get(w["id"], 0) + _ENRICH_COOLDOWN < now
     ]
     if not missing:
@@ -1266,8 +1275,26 @@ def get_word(word_id: str):
     data = load_words()
     for w in data["words"]:
         if w["id"] == word_id:
-            return {"word": w}
+            return {"word": w, "enrichment": _word_enrichment(w)}
     raise HTTPException(status_code=404, detail="单词不存在")
+
+
+def _word_enrichment(word):
+    if word.get("definition", "").strip():
+        return {"status": "ready"}
+    if word["id"] in _enrich_jobs:
+        return dict(_enrich_jobs[word["id"]])
+    return {"status": "idle" if config.get_ai_settings()["configured"] else "not_configured"}
+
+
+@app.post("/api/words/{word_id}/enrich")
+async def retry_word_enrichment(word_id: str):
+    word = get_word(word_id)["word"]
+    if not word.get("definition", "").strip() and config.get_ai_settings()["configured"]:
+        if _enrich_queue is None:
+            raise HTTPException(503, "补全服务尚未启动，请重启词汇本")
+        await _enqueue_enrich_batch([(word_id, word["word"])])
+    return {"word": word, "enrichment": _word_enrichment(word)}
 
 
 @app.post("/api/words")
@@ -1291,10 +1318,10 @@ async def create_word(body: dict):
         save_words(data)
 
     # 送入补全队列，后台串行处理（持续累加，不重置 — 用户显式补全缺失才是新一批）
-    if not word_obj["definition"] and _enrich_queue is not None:
+    if not word_obj["definition"] and _enrich_queue is not None and config.get_ai_settings()["configured"]:
         await _enqueue_enrich_batch([(word_id, word_text)])
 
-    return {"word": word_obj}
+    return {"word": word_obj, "enrichment": _word_enrichment(word_obj)}
 
 
 async def _enrich_worker():
@@ -1305,6 +1332,7 @@ async def _enrich_worker():
     logger.warning("[enrich-worker] started")
     while True:
         word_id, word_text = await _enrich_queue.get()
+        _enrich_jobs[word_id] = {"status": "processing"}
         _enrich_current = word_text
         logger.warning(f"[enrich-worker] picked: {word_text!r} id={word_id}")
         try:
@@ -1316,6 +1344,7 @@ async def _enrich_worker():
             context = book.get("name", "") + ": " + book.get("description", "")
             phonetic, definition, example = await enrich_word(word_text, context)
             if not phonetic and not definition and not example:
+                _enrich_jobs[word_id] = {"status": "failed", "error": "DeepSeek 未返回有效释义，请检查 API Key、余额与网络后重试。"}
                 # 全空响应。词组(空格)静默不打扰 — 可能是 deepseek 对该词组不熟;
                 # 单个词推 toast 提示 — 可能是拼错/不存在/网络失败。
                 logger.warning(f"[enrich] {word_text} — deepseek 返回空")
@@ -1332,6 +1361,7 @@ async def _enrich_worker():
             # 后处理校验：拦截拼写错/中文例句/词性误标
             ok, reason = _enrich_post_check(word_text, phonetic, definition, example)
             if not ok:
+                _enrich_jobs[word_id] = {"status": "failed", "error": reason}
                 logger.warning(f"[enrich-check] {word_text} — 拒绝写回: {reason}")
                 if _event_queue is not None:
                     await _event_queue.put({
@@ -1359,6 +1389,7 @@ async def _enrich_worker():
                         break
 
             _enrich_batch_done += 1
+            _enrich_jobs[word_id] = {"status": "ready" if written and written["definition"] else "idle"}
             if written is not None and _event_queue is not None:
                 await _event_queue.put({
                     "type": "enriched",
@@ -1366,11 +1397,15 @@ async def _enrich_worker():
                     **written,
                 })
         except Exception as e:
+            _enrich_jobs[word_id] = {"status": "failed", "error": "自动补全未完成，单词已保存，可以重试或手动编辑。"}
             # 外层保护:任何意外异常都不让 worker 死,记录后继续下一个
             logger.exception(f"[enrich-worker] UNCAUGHT EXCEPTION: {e}")
             import asyncio as _aio
             await _aio.sleep(1)
         finally:
+            if _enrich_jobs.get(word_id, {}).get("status") == "processing":
+                _enrich_jobs[word_id] = {"status": "idle"}
+            _enriching_ids.pop(word_id, None)
             _enrich_current = None
             _enrich_queue.task_done()
 
@@ -1472,6 +1507,14 @@ def _filter_words(data: dict, q: str, date: str, sort: str = "", letter: str = "
         words = sorted(words, key=lambda w: w["word"].lower())
     elif sort == "alpha_desc":
         words = sorted(words, key=lambda w: w["word"].lower(), reverse=True)
+    elif sort in ("created_desc", "created_asc"):
+        def added_at(word):
+            try:
+                created = _parse_review_time(word.get("created_at", "")).astimezone(timezone.utc)
+            except (ValueError, TypeError, OverflowError):
+                created = datetime.min.replace(tzinfo=timezone.utc)
+            return created, word["id"]
+        words = sorted(words, key=added_at, reverse=sort == "created_desc")
     return words
 
 
